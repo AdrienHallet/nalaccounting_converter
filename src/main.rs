@@ -100,17 +100,17 @@ struct Transaction {
 impl Transaction {
     fn to_value(&self) -> Value {
         json!({
-            "date": format!("{}-{}-{}", &self.date.year(), &self.date.month(), &self.date.day()),
+            "date": &self.date.format("%Y-%m-%d").to_string(),
             "title": format!("{}", &self.description),
-            "amount": format!("{}", &self.amount()),
-            "id": format!("{}", &self.id),
+            "amount": format!("{:.2}", &self.amount()),
+            "id": &self.id,
         })
     }
 
-    fn amount(&self) -> &f32 {
+    fn amount(&self) -> f32 {
         match (&self.expense, &self.income) {
-            (Some(exp_value), None) => exp_value,
-            (None, Some(inc_value)) => inc_value,
+            (Some(exp_value), None) => exp_value * -1.0,
+            (None, Some(inc_value)) => inc_value * 1.0,
             _ => panic!("Unknown amount pattern {:?}", &self)
         }
     }
