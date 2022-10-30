@@ -102,7 +102,7 @@ impl Transaction {
         json!({
             "date": &self.date.format("%Y-%m-%d").to_string(),
             "title": format!("{}", &self.description),
-            "amount": format!("{:.2}", &self.amount()),
+            "amount": format!("{:.0}", &self.amount() * 100.0),
             "id": &self.id,
         })
     }
