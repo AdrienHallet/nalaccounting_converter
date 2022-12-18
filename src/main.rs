@@ -175,7 +175,7 @@ fn parse_transaction(raw_transaction: String) -> Result<Transaction, ParseError>
         .parse::<f32>()
         .ok();
     let description = split_transaction[DESCRIPTION].to_string();
-    let category = split_transaction[CATEGORY].to_string();
+    let category = split_transaction[CATEGORY].trim().to_string();
 
     Ok(Transaction {
         id: SEQUENCE.fetch_add(1, Ordering::SeqCst),
