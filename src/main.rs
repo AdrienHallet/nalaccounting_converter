@@ -1,25 +1,33 @@
 use std::{
-    fs::{File},
+    fs::File,
     io::{self, BufRead},
     path::Path,
-    sync::atomic::{AtomicU32, Ordering},
+    sync::atomic::{AtomicU32, Ordering}, collections::HashMap,
 };
 
-use chrono::{NaiveDate, ParseError, Datelike};
+use chrono::{NaiveDate, ParseError};
 use serde_json::{json, Value};
 
 fn main() {
     let mut transactions: Vec<Transaction> = vec![];
+    let mut categories: HashMap<String, Category> = HashMap::new();
+
     match read_lines("./input.tsv") {
         Ok(lines) => {
             // Consumes the iterator, returns an (Optional) String
             for line in lines {
                 match line {
                     Ok(ip) => {
-                         match parse_transaction(ip) {
-                            Ok(transaction) => {
+                        match parse_transaction(ip) {
+                            Ok(mut transaction) => {
+                                // Populates categoryID with exisint ID (or new one if none existing)
+                                if !categories.contains_key(&transaction.category) {
+                                    categories.insert(transaction.category.clone(), Category { id: categories.len() as u32, name: transaction.category.clone() });
+                                } 
+                                transaction.category_id = Some(categories.get(&transaction.category).unwrap().id);
+                                
                                 transactions.push(transaction);
-                            },
+                            }
                             Err(parse_error) => println!("ERROR: {:?}", parse_error),
                         };
                     }
@@ -33,6 +41,7 @@ fn main() {
     }
     println!("Parsed {} transactions", transactions.len());
     let mut json = get_dexie_structure();
+    // Transactions
     json["data"]["tables"][0]["rowCount"] = json!(transactions.len());
     let val = json["data"]["data"][0]["rows"].as_array_mut().unwrap();
     for transaction in transactions {
@@ -41,6 +50,13 @@ fn main() {
         }
         val.push(transaction.to_value());
     }
+    // Categories
+    json["data"]["tables"][1]["rowCount"] = json!(categories.len());
+    let val = json["data"]["data"][1]["rows"].as_array_mut().unwrap();
+    for category in categories.values() {
+        val.push(category.to_value());
+    }
+    // Output
     println!("{}", json)
 }
 
@@ -50,17 +66,27 @@ fn get_dexie_structure() -> serde_json::Value {
         "formatVersion": 1,
         "data": {
             "databaseName": "budjet",
-            "databaseVersion": 1,
+            "databaseVersion": 3,
             "tables": [
                 {
                     "name": "transactions",
                     "schema": "++id,amount,title",
+                    "rowCount": 0
+                },
+                {
+                    "name": "categories",
+                    "schema": "++id,name",
                     "rowCount": 0
                 }
             ],
             "data": [
                 {
                     "tableName": "transactions",
+                    "inbound": true,
+                    "rows": []
+                },
+                {
+                    "tableName": "categories",
                     "inbound": true,
                     "rows": []
                 }
@@ -94,7 +120,8 @@ struct Transaction {
     expense: Option<f32>,
     income: Option<f32>,
     description: String,
-    category: String,
+    category: String, // from input
+    category_id: Option<u32>, // parsed as category
 }
 
 impl Transaction {
@@ -104,6 +131,7 @@ impl Transaction {
             "title": format!("{}", &self.description),
             "amount": format!("{:.0}", &self.amount() * 100.0),
             "id": &self.id,
+            "categoryId": &self.category_id,
         })
     }
 
@@ -111,7 +139,7 @@ impl Transaction {
         match (&self.expense, &self.income) {
             (Some(exp_value), None) => exp_value * -1.0,
             (None, Some(inc_value)) => inc_value * 1.0,
-            _ => panic!("Unknown amount pattern {:?}", &self)
+            _ => panic!("Unknown amount pattern {:?}", &self),
         }
     }
 
@@ -120,11 +148,32 @@ impl Transaction {
     }
 }
 
+#[derive(Debug)]
+struct Category {
+    id: u32,
+    name: String,
+}
+
+impl Category {
+    fn to_value(&self) -> Value {
+        json!({
+            "id": &self.id,
+            "name": &self.name,
+        })
+    }
+}
+
 fn parse_transaction(raw_transaction: String) -> Result<Transaction, ParseError> {
     let split_transaction = raw_transaction.split('\t').collect::<Vec<&str>>();
     let date = NaiveDate::parse_from_str(split_transaction[DATE], DATE_FORMAT)?;
-    let expense = split_transaction[EXPENSE].replace(',', ".").parse::<f32>().ok();
-    let income = split_transaction[INCOME].replace(',', ".").parse::<f32>().ok();
+    let expense = split_transaction[EXPENSE]
+        .replace(',', ".")
+        .parse::<f32>()
+        .ok();
+    let income = split_transaction[INCOME]
+        .replace(',', ".")
+        .parse::<f32>()
+        .ok();
     let description = split_transaction[DESCRIPTION].to_string();
     let category = split_transaction[CATEGORY].to_string();
 
@@ -134,6 +183,7 @@ fn parse_transaction(raw_transaction: String) -> Result<Transaction, ParseError>
         expense,
         income,
         description,
-        category
+        category,
+        category_id: None,
     })
 }
